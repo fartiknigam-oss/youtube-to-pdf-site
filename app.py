@@ -28,40 +28,55 @@ if st.button("Generate PDF", type="primary"):
         status_text = st.empty()
         progress_bar = st.progress(0)
         
-        # Create a temporary directory for the video
         temp_dir = tempfile.mkdtemp()
         video_path = os.path.join(temp_dir, "temp_video.mp4")
         
-        status_text.text("Downloading video temporarily to the server...")
+        status_text.text("Connecting to YouTube securely...")
         
-        # Tell yt-dlp to download a small mp4 file instead of streaming
+        # Advanced bypass headers to mimic a real mobile client and avoid data-center blocks
         ydl_opts = {
-            'format': 'best[height<=720][ext=mp4]/best',
+            'format': 'mp4[height<=720]/best[height<=720]/best',
             'outtmpl': video_path,
             'quiet': True,
             'no_warnings': True,
-            'extractor_args': {'youtube': {'player_client': ['android', 'web']}}
+            'nocheckcertificate': True,
+            'ignoreerrors': False,
+            'logtostderr': False,
+            'geo_bypass': True,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Sec-Fetch-Mode': 'navigate',
+            },
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android', 'ios'],
+                    'skip': ['dash', 'hls']
+                }
+            }
         }
         
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                status_text.text("Downloading video frames to server...")
                 info_dict = ydl.extract_info(video_url, download=True)
                 video_title = info_dict.get('title', 'video_summary')
                 safe_title = "".join([c for c in video_title if c.isalpha() or c.isdigit() or c in ' _-']).rstrip()
         except Exception as e:
-            st.error("Error downloading video. YouTube might be blocking the server connection.")
+            st.error(f"YouTube blocked the server connection. Error details: {str(e)}")
+            st.info("💡 Tip: Try a different YouTube video link to see if it's a specific video restriction or a global server block.")
             st.stop()
 
         if os.path.exists(video_path):
             status_text.text("Processing video frames...")
             
-            # Read from the local downloaded file
             cap = cv2.VideoCapture(video_path)
             fps = cap.get(cv2.CAP_PROP_FPS) or 30.0 
             
             ret, frame = cap.read()
             if not ret:
-                st.error("Could not read downloaded video.")
+                st.error("Could not parse the downloaded video file structure.")
                 st.stop()
 
             prev_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -128,7 +143,6 @@ if st.button("Generate PDF", type="primary"):
 
             cap.release()
             
-            # 🧹 DELETE THE VIDEO IMMEDIATELY TO SAVE SERVER SPACE
             try:
                 os.remove(video_path)
             except:
@@ -158,5 +172,5 @@ if st.button("Generate PDF", type="primary"):
                         type="primary"
                     )
             else:
-                status_text.text("No stable slides found in the video.")
+                st.text("No stable slides found in the video layout.")
                 progress_bar.empty()

@@ -12,19 +12,15 @@ NEW_PAGE_THRESHOLD = 5.0
 UPDATE_PAGE_THRESHOLD = 0.05 
 # ==========================================
 
-# 1. Setup the Webpage Layout
 st.set_page_config(page_title="YouTube to PDF Converter", page_icon="📄", layout="centered")
 
 st.title("📹 YouTube to PDF Converter")
 st.markdown("Turn any lecture or tutorial into a clean PDF of slides. Perfect for capturing notes from intense CAD tutorials or heavy thermodynamic lecture series.")
 
-# 2. Placeholders for your future Affiliate Ads (Zero-Cost Monetization)
 st.info("💡 **Student Gear Recommendation:** Upgrade your engineering study setup with [this top-rated laptop stand](https://amazon.com) (Your future affiliate link goes here!).")
 
-# 3. The Input Field
 video_url = st.text_input("Paste YouTube Link Here:", placeholder="https://www.youtube.com/watch?v=...")
 
-# 4. The Processing Engine
 if st.button("Generate PDF", type="primary"):
     if not video_url:
         st.warning("Please enter a valid link first.")
@@ -32,10 +28,16 @@ if st.button("Generate PDF", type="primary"):
         status_text = st.empty()
         progress_bar = st.progress(0)
         
-        status_text.text(f"Connecting to video stream...")
+        # Create a temporary directory for the video
+        temp_dir = tempfile.mkdtemp()
+        video_path = os.path.join(temp_dir, "temp_video.mp4")
         
+        status_text.text("Downloading video temporarily to the server...")
+        
+        # Tell yt-dlp to download a small mp4 file instead of streaming
         ydl_opts = {
-            'format': 'bestvideo[height<=720]+bestaudio/best[height<=720]/best',
+            'format': 'best[height<=720][ext=mp4]/best',
+            'outtmpl': video_path,
             'quiet': True,
             'no_warnings': True,
             'extractor_args': {'youtube': {'player_client': ['android', 'web']}}
@@ -43,23 +45,23 @@ if st.button("Generate PDF", type="primary"):
         
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info_dict = ydl.extract_info(video_url, download=False)
-                stream_url = info_dict.get('url', None)
+                info_dict = ydl.extract_info(video_url, download=True)
                 video_title = info_dict.get('title', 'video_summary')
                 safe_title = "".join([c for c in video_title if c.isalpha() or c.isdigit() or c in ' _-']).rstrip()
         except Exception as e:
-            st.error("Error connecting to video. It might be private or region-locked.")
+            st.error("Error downloading video. YouTube might be blocking the server connection.")
             st.stop()
 
-        if stream_url:
-            status_text.text("Stream connected. Extracting unique slides...")
+        if os.path.exists(video_path):
+            status_text.text("Processing video frames...")
             
-            cap = cv2.VideoCapture(stream_url)
+            # Read from the local downloaded file
+            cap = cv2.VideoCapture(video_path)
             fps = cap.get(cv2.CAP_PROP_FPS) or 30.0 
             
             ret, frame = cap.read()
             if not ret:
-                st.error("Could not read video stream.")
+                st.error("Could not read downloaded video.")
                 st.stop()
 
             prev_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -70,12 +72,9 @@ if st.button("Generate PDF", type="primary"):
             frame_count = 0
             stable_checks = 0
             
-            # Temporary storage so we don't clog up the server
-            temp_dir = tempfile.mkdtemp()
             saved_frames = []
             current_draft_frame = None
 
-            # Capping at 15 mins to prevent the free server from timing out
             MAX_FRAMES_TO_CHECK = int(fps * 60 * 15) 
             
             while True:
@@ -85,7 +84,6 @@ if st.button("Generate PDF", type="primary"):
                     
                 frame_count += 1
                 
-                # Check video twice a second (Your deduplication logic)
                 if frame_count % int(fps / 2) == 0:
                     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                     motion = cv2.absdiff(gray, prev_gray).mean()
@@ -122,7 +120,6 @@ if st.button("Generate PDF", type="primary"):
                             
                         stable_checks = 0
 
-            # Save absolute last draft
             if has_draft and current_draft_frame is not None:
                 frame_path = os.path.join(temp_dir, f"slide_{pages_captured}.jpg")
                 cv2.imwrite(frame_path, current_draft_frame)
@@ -131,11 +128,16 @@ if st.button("Generate PDF", type="primary"):
 
             cap.release()
             
+            # 🧹 DELETE THE VIDEO IMMEDIATELY TO SAVE SERVER SPACE
+            try:
+                os.remove(video_path)
+            except:
+                pass
+            
             if pages_captured > 0:
                 status_text.text("Compiling into PDF...")
                 progress_bar.progress(80)
                 
-                # Build the PDF
                 pdf = FPDF(orientation='L', unit='mm', format='A4')
                 for img_path in saved_frames:
                     pdf.add_page()

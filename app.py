@@ -1,9 +1,9 @@
 import streamlit as st
 import cv2
-import yt_dlp
 import os
 import tempfile
 from fpdf import FPDF
+from pytubefix import YouTube
 
 # ==========================================
 # 🎛️ THE CONTROL PANEL 🎛️
@@ -31,52 +31,30 @@ if st.button("Generate PDF", type="primary"):
         temp_dir = tempfile.mkdtemp()
         video_path = os.path.join(temp_dir, "temp_video.mp4")
         
-        status_text.text("Connecting to YouTube securely...")
-        
-        # Advanced bypass headers to mimic a real mobile client and avoid data-center blocks
-        ydl_opts = {
-            'format': 'mp4[height<=720]/best[height<=720]/best',
-            'outtmpl': video_path,
-            'quiet': True,
-            'no_warnings': True,
-            'nocheckcertificate': True,
-            'ignoreerrors': False,
-            'logtostderr': False,
-            'geo_bypass': True,
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Sec-Fetch-Mode': 'navigate',
-            },
-            'extractor_args': {
-                'youtube': {
-                    'player_client': ['android', 'ios'],
-                    'skip': ['dash', 'hls']
-                }
-            }
-        }
+        status_text.text("Bypassing firewalls and fetching video stream...")
         
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                status_text.text("Downloading video frames to server...")
-                info_dict = ydl.extract_info(video_url, download=True)
-                video_title = info_dict.get('title', 'video_summary')
-                safe_title = "".join([c for c in video_title if c.isalpha() or c.isdigit() or c in ' _-']).rstrip()
+            # Using pytubefix with the 'ANDROID_VR' client to bypass cloud blocks
+            yt = YouTube(video_url, client='ANDROID_VR')
+            safe_title = "".join([c for c in yt.title if c.isalpha() or c.isdigit() or c in ' _-']).rstrip()
+            
+            # Grab the smallest mp4 stream to make processing lightning fast
+            stream = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').asc().first()
+            stream.download(output_path=temp_dir, filename="temp_video.mp4")
+            
         except Exception as e:
-            st.error(f"YouTube blocked the server connection. Error details: {str(e)}")
-            st.info("💡 Tip: Try a different YouTube video link to see if it's a specific video restriction or a global server block.")
+            st.error("YouTube updated their cloud-blocker. Try again in a few minutes, or try a different video.")
             st.stop()
 
         if os.path.exists(video_path):
-            status_text.text("Processing video frames...")
+            status_text.text("Processing video frames natively...")
             
             cap = cv2.VideoCapture(video_path)
             fps = cap.get(cv2.CAP_PROP_FPS) or 30.0 
             
             ret, frame = cap.read()
             if not ret:
-                st.error("Could not parse the downloaded video file structure.")
+                st.error("Could not read the video file.")
                 st.stop()
 
             prev_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -143,6 +121,7 @@ if st.button("Generate PDF", type="primary"):
 
             cap.release()
             
+            # Delete the video instantly to save server space
             try:
                 os.remove(video_path)
             except:

@@ -1,4 +1,4 @@
 streamlit
 opencv-python-headless
-yt-dlp
+pytubefix
 fpdf
